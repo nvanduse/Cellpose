@@ -1,20 +1,20 @@
 Installation:
 
 Install Python for Windows (v3.12) and pip
-open command prompt
-install Cellpose with the following command: pip install cellpose[gui]
-start the Cellpose GUI by entering the following command: cellpose
+Open command prompt
+Install Cellpose with the following command: pip install cellpose[gui]
+Start the Cellpose GUI by entering the following command: cellpose
 
-make a folder on your desktop named: input_cellpose
-make a .bat file on your desktop called: "run_cellpose.bat" and put the shell script into it
-make another folder on your desktop called: "scripts_and_notes_cellpose" and put the python script into it
+Make a .bat file on your desktop called: "run_cellpose.bat". Open it with a text editor and save the shell script into it.
+Make a folder on your desktop named: input_cellpose
+Make another folder on your desktop called: "scripts_and_notes_cellpose" and put the python script (cellpose_quantify.py) into it
 
 
-put your images into the input folder and double click the .bat file. A command line window will pop up and 
+Put your images into the input folder and double click the .bat file. A command line window will pop up and 
 give you some options for running the segmentation.
 
 If the segmentation isn't working well it's probably because the auto settings for cell size aren't right.
-To figure out the right cell size settings, open up the cellpose GUI and drag & drop an image in. The red
+To figure out the right cell size setting, open up the cellpose GUI and drag & drop an image in. The red
 dot in the bottom left of the image is the expected cell size. If it's too big/small then adjust the size using
 the menu in the left panel, until the red dot is about the same size as a cell or nuclei; then run the script,
 select "M" for manual specification, and enter the correct size.
