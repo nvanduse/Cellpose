@@ -5,7 +5,7 @@ Open command prompt
 Install Cellpose with the following command: pip install cellpose[gui]
 Start the Cellpose GUI by entering the following command: cellpose
 
-Make a .bat file on your desktop called: "run_cellpose.bat". Open it with a text editor and save the shell script into it.
+Make a .bat file on your desktop called: "run_cellpose.bat". Open it with a text editor and save the .bat script into it.
 Make a folder on your desktop named: input_cellpose
 Make another folder on your desktop called: "scripts_and_notes_cellpose" and put the python script (cellpose_quantify.py) into it
 
