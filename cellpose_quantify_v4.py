@@ -1,4 +1,4 @@
-# cellpose_quantify_v3.py
+# cellpose_quantify_v4.py
 """
 Quantify Cellpose masks, optionally filtering objects by Length/Width ratio
 and generating overlays that show only retained objects. Outputs per-object
