@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 
 :: ————————————— Settings —————————————
 :: (1) Where your raw images live:
-set INPUT_DIR=C:\Users\user\Desktop\input_cellpose_v3
+set INPUT_DIR=C:\Users\user\Desktop\input_cellpose_v4
 
 :: (2) Where output folder and masks will get written:
 set OUTPUT_DIR=%INPUT_DIR%\output
@@ -245,6 +245,7 @@ if errorlevel 1 (
 
 :: ————————————— Done —————————————
 :end
+
 echo.                                   >> "%LOG_FILE%" 2>&1
 echo ===== Completed at %DATE% %TIME% ===== >> "%LOG_FILE%" 2>&1
 echo Finished
