@@ -114,6 +114,7 @@ for fname in os.listdir(mask_dir):
         area = p.area
         major = float(p.major_axis_length)
         minor = float(p.minor_axis_length) if p.minor_axis_length != 0 else np.nan
+        perimeter = float(p.perimeter_crofton) if hasattr(p, "perimeter_crofton") else float(p.perimeter)
 
         # compute mean and p99 per channel (robust to grayscale)
         mean_rgb = [np.nan, np.nan, np.nan]
@@ -139,6 +140,12 @@ for fname in os.listdir(mask_dir):
         else:
             lw_ratio = major / minor
 
+        # circularity: 1.0 = perfect circle; drops as shapes elongate or get jagged
+        if perimeter == 0:
+            circularity = np.nan
+        else:
+            circularity = (4 * np.pi * area) / (perimeter ** 2)
+
         # filter?
         keep = True
         if LWR_FILTER and LWR_CUTOFF > 0 and not np.isnan(lw_ratio):
@@ -160,7 +167,8 @@ for fname in os.listdir(mask_dir):
                 round(float(p99_rgb[2]), 2),
                 round(major, 2),
                 round(minor, 2),
-                round(float(lw_ratio), 3) if not np.isnan(lw_ratio) else ""
+                round(float(lw_ratio), 3) if not np.isnan(lw_ratio) else "",
+                round(float(circularity), 3) if not np.isnan(circularity) else ""
             ])
 
     # ----- Overlay generation -----
@@ -221,7 +229,7 @@ header = [
     'Image', 'Object Number', 'Object Location', 'Area',
     'Red Avg', 'Green Avg', 'Blue Avg',
     'Red p99', 'Green p99', 'Blue p99',
-    'Length', 'Width', 'L/W Ratio',
+    'Length', 'Width', 'L/W Ratio', 'Circularity',
     prompt_log  # appended log column
 ]
 
