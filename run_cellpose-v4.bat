@@ -245,7 +245,6 @@ if errorlevel 1 (
 
 :: ————————————— Done —————————————
 :end
-
 echo.                                   >> "%LOG_FILE%" 2>&1
 echo ===== Completed at %DATE% %TIME% ===== >> "%LOG_FILE%" 2>&1
 echo Finished
