@@ -2,7 +2,7 @@ Installation:
 
 Install Python for Windows (v3.12) and pip
 Open command prompt
-Install Cellpose with the following command: pip install cellpose[gui]
+Install Cellpose with the following command: pip install "cellpose[gui]==3.1.1.1"
 Start the Cellpose GUI by entering the following command: cellpose
 
 Make a .bat file on your desktop called: "run_cellpose.bat". Open it with a text editor and save the .bat script into it.
@@ -25,3 +25,4 @@ for nuclei of isolated cardiomyocytes than the nuclei model (I suspect due to th
 
 I think the GUI has options for fine-tuning a model by manually adding or removing annotations, but the standard models
 seem pretty good and I haven't gotten around to figuring that out and adding compatibility with the batch script yet.
+
