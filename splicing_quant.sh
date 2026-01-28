@@ -67,8 +67,7 @@ module load python/3.11.4                #needs to be loaded for pip to work
 ######################################################################################################
 #ANALYSIS PARAMETERS (UPDATE AS NEEDED; 2x150bp ONLY)
 
-forward_pattern="*_R1.fastq"
-reverse_pattern="*_R2.fastq"
+forward_pattern="*.fastq"
 
 # Splicing/cryptic-acceptor motifs (all searched within forward reads)
 motif_correct_splicing="gcggccgc"
@@ -81,15 +80,11 @@ motif_cryptic_5="ctacaagacccgcgccgagg"
 motif_cryptic_6="gtatcaaggttacaagacag"
 motif_cryptic_7="tctctctgcctattggtcta"
 
-# Barcode extraction target (2x150bp only)
-barcode_anchor_150="gcggccgc"                   # 2x150bp anchor (NotI)
+# Export motif variables so GNU parallel subshells see them
+export motif_correct_splicing
 
-# UMI anchor in reverse read (reverse-complement orientation in R2)
-umi_left_rc="acataactcc"
-umi_right_rc="acatgaagtt"
-
-# Export motif/anchor variables so GNU parallel subshells see them
-export motif_correct_splicing barcode_anchor_150 umi_left_rc umi_right_rc
+# Bash options for safer globbing
+shopt -s nullglob
 
 ######################################################################################################
 #1) COUNT RAW READS CONTAINING SPECIFIC SEQUENCES (FORWARD READ ONLY)
@@ -97,8 +92,15 @@ export motif_correct_splicing barcode_anchor_150 umi_left_rc umi_right_rc
 splicing_stats_file="splicing_site_counts.tsv"
 echo -e "sample\ttotal_reads\tcorrect_splicing\tfailed_splicing\tcryptic_1\tcryptic_2\tcryptic_3\tcryptic_4\tcryptic_5\tcryptic_6\tcryptic_7\tother\tcorrect_pct\tfailed_pct\tcryptic1_pct\tcryptic2_pct\tcryptic3_pct\tcryptic4_pct\tcryptic5_pct\tcryptic6_pct\tcryptic7_pct\tother_pct" > "$splicing_stats_file"
 
-for r1 in $forward_pattern; do
+forward_files=( $forward_pattern )
+if [ ${#forward_files[@]} -eq 0 ]; then
+    echo "No files match pattern: $forward_pattern (check .fastq vs .fastq.gz and working directory)" >&2
+    exit 1
+fi
+
+for r1 in "${forward_files[@]}"; do
     sample_name="${r1%.fastq}"
+    sample_name="${sample_name%_R1_001}"
     sample_name="${sample_name%_R1}"
     awk -v sample="$sample_name" \
         -v m1="$motif_correct_splicing" \
@@ -134,130 +136,50 @@ for r1 in $forward_pattern; do
 done
 
 ######################################################################################################
-#2) FILTER READS WITH NotI SITE IN FORWARD READ; COPY MATCHING REVERSE READS
+#2) EXTRACT BARCODES FROM FORWARD READS ONLY
+#   Output: "barcode_<sample>.txt"
 
-filter_fastq_pairs() {
+# Barcode extraction target (2x150bp only)
+barcode_anchor_150="gcggccgc"                   # 2x150bp anchor (NotI)
+export barcode_anchor_150
+
+process_forward_reads() {
     r1="$1"
-    r2="${r1/_R1/_R2}"
-    if [ ! -f "$r2" ]; then
-        echo "No matching reverse file found for $r1"
-        return
-    fi
-
-    # Write uncompressed filtered FASTQ to avoid gz write complexity in awk
-    out_r1="filtered_${r1}"
-    out_r2="filtered_${r2}"
-
-    # Stream paired FASTQ files with paste so each line has R1<TAB>R2
-    paste "$r1" "$r2" | \
-    awk -v motif="$motif_correct_splicing" -v out1="$out_r1" -v out2="$out_r2" '
-        BEGIN{OFS="\n"}
-        NR%4==1{r1_h=$1; r2_h=$2}
-        NR%4==2{r1_s=$1; r2_s=$2}
-        NR%4==3{r1_p=$1; r2_p=$2}
-        NR%4==0{
-            r1_q=$1; r2_q=$2;
-            if(index(tolower(r1_s), motif)){
-                print r1_h, r1_s, r1_p, r1_q >> out1;
-                print r2_h, r2_s, r2_p, r2_q >> out2;
-            }
-        }'
-}
-
-export -f filter_fastq_pairs
-parallel -j "$SLURM_CPUS_PER_TASK" filter_fastq_pairs ::: $forward_pattern
-
-######################################################################################################
-#3) EXTRACT BARCODES AND UMIs FROM FILTERED FILES
-#   Output: "barcode-UMI_<filtered_R1_file_base>.txt"
-
-process_filtered_pair() {
-    r1="$1"
-    r2="${r1/_R1/_R2}"
-    if [ ! -f "$r2" ]; then
-        echo "No matching reverse file found for $r1"
-        return
-    fi
-
     base_name="${r1%.fastq}"
-    clean_name="${base_name#filtered_}"
+    clean_name="${base_name%_R1_001}"
     clean_name="${clean_name%_R1}"
-    out_file="barcode-UMI_${clean_name}.txt"
+    out_file="barcode_${clean_name}.txt"
     tmp_file="tmp_${clean_name}.txt"
 
     # 2x150bp only
     barcode_anchor="$barcode_anchor_150"
     barcode_len=20
 
-    # Extract barcode and UMI per read-pair; only output when both are present
-    paste "$r1" "$r2" | \
-    awk -v anchor="$barcode_anchor" -v blen="$barcode_len" \
-        -v left_rc="$umi_left_rc" -v right_rc="$umi_right_rc" '
+    # Extract barcode per read; only output when anchor is present
+    awk -v anchor="$barcode_anchor" -v blen="$barcode_len" '
         BEGIN{OFS="\t"}
-        NR%4==1{r1_h=$1; r2_h=$2}
-        NR%4==2{r1_s=$1; r2_s=$2}
-        NR%4==3{r1_p=$1; r2_p=$2}
-        NR%4==0{
-            r1_q=$1; r2_q=$2;
-            r1_seq=tolower(r1_s);
-            r2_seq=tolower(r2_s);
-
-            bpos=index(r1_seq, anchor);
+        NR%4==2{
+            seq=tolower($0);
+            bpos=index(seq, anchor);
             if(bpos){
-                barcode=substr(r1_seq, bpos+length(anchor), blen);
-            } else {
-                next;
+                barcode=substr(seq, bpos+length(anchor), blen);
+                if(length(barcode)==blen){
+                    print barcode;
+                }
             }
-
-            # UMI is between left_rc and right_rc in the reverse read
-            if(match(r2_seq, left_rc "[acgtn]{10}" right_rc)){
-                umi=substr(r2_seq, RSTART+length(left_rc), 10);
-            } else {
-                next;
-            }
-
-            if(length(barcode)==blen && length(umi)==10){
-                print barcode, umi;
-            }
-        }' > "$tmp_file"
+        }' "$r1" > "$tmp_file"
 
     # Filter for correct format and write final output
-    awk -F"\t" -v blen="$barcode_len" '
-        length($1)==blen && length($2)==10 {print $0}
-    ' "$tmp_file" > "$out_file"
-
+    awk -v blen="$barcode_len" 'length($1)==blen {print $0}' "$tmp_file" > "$out_file"
     rm "$tmp_file"
 }
 
-export -f process_filtered_pair
-parallel -j "$SLURM_CPUS_PER_TASK" process_filtered_pair ::: filtered_*_R1.fastq
-
-#####################################################################################################
-#3b) LOG LINE COUNTS FOR BARCODE-UMI FILES
-
-log_file="processing_log.txt"
-echo -e "file\tlines" > "$log_file"
-for file in barcode-UMI_*.txt; do
-    line_count=$(wc -l < "$file")
-    echo -e "$file\t$line_count" >> "$log_file"
-done
-
-#####################################################################################################
-#4) DEDUPLICATE BARCODE/UMIs
-#Only PCR duplicates should have the same barcode and the same UMI.
-
-for file in barcode-UMI_*.txt; do
-    sort -u "$file" -o "deduplicated_$file"
-done
-
-# Record deduplicated line counts in the log
-for file in deduplicated_barcode-UMI_*.txt; do
-    line_count=$(wc -l < "$file")
-    echo -e "$file\t$line_count" >> "$log_file"
-done
+export -f process_forward_reads
+CPUS="${SLURM_CPUS_PER_TASK:-1}"
+parallel -j "$CPUS" process_forward_reads ::: "${forward_files[@]}"
 
 ######################################################################################################
-#5) SENSOR COUNTING FROM DEDUPLICATED FILES
+#3) SENSOR COUNTING FROM BARCODE FILES
 #Uses sensor_pool_barcodes_first20.csv with headers: "sensor" and "barcode (first 20bp)"
 
 python3 - <<'PYTHON_SCRIPT'
@@ -277,9 +199,9 @@ barcode_table[barcode_col] = barcode_table[barcode_col].astype(str).str.lower().
 barcode_to_sensor = barcode_table.set_index(barcode_col)
 
 count_frames = []
-for f in sorted(glob.glob("deduplicated_barcode-UMI_*.txt")):
-    sample_name = os.path.basename(f).replace("deduplicated_barcode-UMI_", "").replace(".txt", "")
-    df = pd.read_csv(f, sep="\t", header=None, names=["barcode", "umi"])
+for f in sorted(glob.glob("barcode_*.txt")):
+    sample_name = os.path.basename(f).replace("barcode_", "").replace(".txt", "")
+    df = pd.read_csv(f, sep="\t", header=None, names=["barcode"])
     df["barcode"] = df["barcode"].astype(str).str.lower().str.strip()
     counts = df["barcode"].value_counts()
     merged = barcode_to_sensor.copy()
@@ -292,7 +214,7 @@ for frame in count_frames:
 
 raw_counts.to_csv("raw_counts.csv", index=False)
 
-# 6) RPM normalization
+# 4) RPM normalization
 rpm = raw_counts.copy()
 count_cols = [c for c in rpm.columns if c not in ["sensor", barcode_col]]
 for col in count_cols:
@@ -300,89 +222,4 @@ for col in count_cols:
     rpm[col] = (rpm[col] / total * 1_000_000) if total else 0
 
 rpm.to_csv("RPM_counts.csv", index=False)
-PYTHON_SCRIPT
-
-##################################################################################################################################
-##################################################################################################################################
-##################################################################################################################################
-#Switch to Python for easier manipulation of the data table
-
-python3 - <<'PYTHON_SCRIPT'
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import PyPDF2
-import os
-import numpy as np
-
-
-#############
-# 1) Read the readcount_table.txt into pandas and remove duplicate columns --> reformat the header columns and save as tab delimitted txt. Will be input for MAGeCK.
-
-data = pd.read_csv("readcount_table.txt", delimiter="\t")                # Read in the table
-data.columns = data.columns.str.split('.').str[0]                        # Remove text from column headers that comes after the "."
-data = data.loc[:, ~data.columns.duplicated()]                           # Remove duplicate columns if any
-data['annotation'] = data.iloc[:, 0] + "-" + data.iloc[:, 1]             # Create the 'annotation' column by concatenating the first two columns with a "-"
-data['gene'] = data.iloc[:, 0].str.split('_').str[0]                     # Create the 'gene' column by extracting the text before the underscore in the first column
-data = data.drop(data.columns[[0, 1]], axis=1)                           # Now remove the original first two columns (columns 0 and 1)
-columns = ['annotation', 'gene'] + [col for col in data.columns if col not in ['annotation', 'gene']]        # Reorder the columns to put 'annotation' and 'gene' at the beginning
-data = data[columns]
-data.to_csv("readcount_table_for_MAGeCK.txt", sep='\t', index=False)     # Save the DataFrame to a tab-delimited text file
-
-#############
-# 2) Read the readcount_table.txt into pandas and remove duplicate columns --> save as csv. Will be input for subsequent steps.
-
-data = pd.read_csv("readcount_table.txt", delimiter="\t")                         # Read in the table
-data.columns = data.columns.str.split('.').str[0]                                 # remove text from column headers that comes after the "."
-data = data.loc[:, ~data.columns.duplicated()]                                    # deduplicate (will remove duplicated annotation columns)
-data.to_csv("readcount_table_deduplicatedColumns.csv", index=False)               # Save the DataFrame to a CSV file
-
-#############
-# 3) Normalize the counts to counts-per-million (CPM)
-
-data = pd.read_csv("readcount_table_deduplicatedColumns.csv")           # Read in the de-duplicated table
-data_columns = data.columns[2:]                                         # Exclude the first two columns (Annotation and gRNA-seq)
-cpm_data = data.copy()
-
-for col in data_columns:
-    cpm_data[col] = (data[col] / data[col].sum()) * 1_000_000
-
-cpm_data.to_csv("readcount_table_CPM.csv", index=False)               # Save the CPM table to a CSV file
-
-##############
-# 4) Plot a histogram for each column using the log2(counts+1) transformed counts-per-million data
-
-pdf_files = []
-with pd.option_context("mode.use_inf_as_na", True):  # Handle infinite values as NaNs
-    for col in data_columns:
-        fig, ax = plt.subplots()
-        log_data = np.log2(cpm_data[col] + 1)                                    # Apply the log2(counts+1) transformation to the column data
-        sns.histplot(data=log_data, ax=ax, bins=40, kde=False)                   # plot with 40 bins
-        ax.set_xlabel("log2(Counts per Million + 1)")
-        ax.set_ylabel("# of tiles")
-        ax.set_title(col)
-
-        # Save histogram to a PDF file
-        pdf_filename = f"{col}_histogram.pdf"                                   # pdf file name
-        with plt.rc_context(rc={"figure.subplot.bottom": 0.2}):
-            fig.savefig(pdf_filename, bbox_inches="tight")
-        
-        pdf_files.append(pdf_filename)
-        plt.close(fig)
-
-# Merge individual PDFs into a single PDF document
-output_pdf = PyPDF2.PdfMerger()
-
-for pdf_file in pdf_files:
-    output_pdf.append(pdf_file)
-
-# Save the merged PDF document
-with open("histograms_merged.pdf", "wb") as f:
-    output_pdf.write(f)
-
-# Clean up individual PDF files
-for pdf_file in pdf_files:
-    os.remove(pdf_file)
-#############################################
-
 PYTHON_SCRIPT
