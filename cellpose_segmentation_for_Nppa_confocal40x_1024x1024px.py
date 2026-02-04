@@ -9,6 +9,7 @@ python cellpose_segmentation_for_Nppa_confocal40x_1024x1024px.py <image_dir> <ou
 # Prompts for cell/nucleus channels (with tags) and optional diameter inputs.
 # Use --cell_channel/--nuc_channel to skip channel prompts.
 # Use --cell_diameter/--nuc_diameter to skip diameter prompts.
+# For adult CMs from confocal 40x objective, recommended values: Cell diameter: 200 (mode=manual), Nuc diameter: 50 (mode=manual)
 # If overlays are present, you can select the c1-4 overlay as a segmentation input.
 # Optional overlay styling: --cell_outline_color R,G,B --nuc_outline_color R,G,B --outline_thickness N
 
